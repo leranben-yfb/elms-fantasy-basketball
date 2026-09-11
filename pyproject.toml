@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "elms-fantasy-basketball"
-version = "0.2.0"
+version = "0.3.0"
 description = "Fantasy basketball decision engine with pluggable league and NBA data providers"
 readme = "README.md"
 requires-python = ">=3.11"
