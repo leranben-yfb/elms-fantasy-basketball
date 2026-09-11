@@ -1,31 +1,59 @@
 from __future__ import annotations
 
 import os
+from typing import Any
 
 from elms_fantasy.models import LeagueSnapshot
 from elms_fantasy.providers.base import FantasyProvider
+from elms_fantasy.yahoo_api import (
+    get_basketball_leagues,
+    get_league_draft_results,
+    get_league_metadata,
+    get_league_scoreboard,
+    get_league_settings,
+    get_league_standings,
+    get_league_teams,
+    get_league_transactions,
+)
+from elms_fantasy.yahoo_oauth import load_env_file
+from elms_fantasy.yahoo_parser import find_leagues
 
 
 class YahooFantasyProvider(FantasyProvider):
-    """Yahoo adapter boundary.
+    """Read-only Yahoo adapter.
 
-    OAuth/network implementation will be enabled once Yahoo provisions the
-    approved application's Client ID and Fantasy Sports permission.
+    Raw league ingestion is operational. Full normalization into LeagueSnapshot
+    is intentionally gated on real Yahoo league payloads so the parser can be
+    validated against the user's actual league configuration rather than guessed.
     """
 
-    def __init__(self) -> None:
-        self.client_id = os.getenv("YAHOO_CLIENT_ID", "")
-        self.client_secret = os.getenv("YAHOO_CLIENT_SECRET", "")
-        self.redirect_uri = os.getenv("YAHOO_REDIRECT_URI", "http://localhost:8765/callback")
-        self.league_key = os.getenv("YAHOO_LEAGUE_KEY", "")
+    def __init__(self, league_key: str | None = None) -> None:
+        load_env_file()
+        self.league_key = league_key or os.getenv("YAHOO_LEAGUE_KEY", "").strip()
+
+    def discover_leagues(self):
+        return find_leagues(get_basketball_leagues())
+
+    def get_raw_league(self, league_key: str | None = None) -> dict[str, Any]:
+        key = league_key or self.league_key
+        if not key:
+            raise RuntimeError(
+                "No Yahoo league key configured. Run elms-fantasy yahoo-leagues "
+                "after Yahoo Fantasy API permission is provisioned."
+            )
+        return {
+            "metadata": get_league_metadata(key),
+            "settings": get_league_settings(key),
+            "teams": get_league_teams(key),
+            "standings": get_league_standings(key),
+            "scoreboard": get_league_scoreboard(key),
+            "transactions": get_league_transactions(key),
+            "draft_results": get_league_draft_results(key),
+        }
 
     def get_snapshot(self) -> LeagueSnapshot:
-        if not self.client_id or not self.client_secret:
-            raise RuntimeError(
-                "Yahoo credentials are not configured yet. Use the JSON provider "
-                "until Yahoo provisions the approved developer app."
-            )
-        raise NotImplementedError(
-            "Yahoo OAuth/API ingestion is intentionally isolated here and will be "
-            "implemented as soon as the approved Client ID is available."
+        raise RuntimeError(
+            "Yahoo raw ingestion is ready, but LeagueSnapshot normalization needs "
+            "one real Yahoo basketball league payload. Use yahoo-export once the "
+            "league exists; the engine remains usable with JSON snapshots meanwhile."
         )

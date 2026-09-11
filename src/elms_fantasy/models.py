@@ -85,9 +85,41 @@ class TradeEvaluation:
     verdict: str
 
 
+def _percentage_components(category: str) -> tuple[str, str] | None:
+    normalized = category.upper()
+    if normalized in {"FG%", "FG_PCT"}:
+        return "FGM", "FGA"
+    if normalized in {"FT%", "FT_PCT"}:
+        return "FTM", "FTA"
+    return None
+
+
+def _aggregate_percentage(players: tuple[Player, ...], category: str) -> float:
+    components = _percentage_components(category)
+    if components is None:
+        return 0.0
+    makes_key, attempts_key = components
+    makes = sum(float(player.stats.get(makes_key, 0.0)) for player in players)
+    attempts = sum(float(player.stats.get(attempts_key, 0.0)) for player in players)
+    if attempts > 0:
+        return makes / attempts
+
+    # Fallback for projection feeds that supply only percentage values. An
+    # equal-weight mean is still more meaningful than summing percentages.
+    values = [
+        float(player.stats[category])
+        for player in players
+        if category in player.stats
+    ]
+    return sum(values) / len(values) if values else 0.0
+
+
 def sum_categories(players: Iterable[Player], categories: Iterable[str]) -> dict[str, float]:
-    totals = {category: 0.0 for category in categories}
-    for player in players:
-        for category in totals:
-            totals[category] += float(player.stats.get(category, 0.0))
+    roster = tuple(players)
+    totals: dict[str, float] = {}
+    for category in categories:
+        if category.upper() in PERCENTAGE_CATEGORIES:
+            totals[category] = _aggregate_percentage(roster, category)
+        else:
+            totals[category] = sum(float(player.stats.get(category, 0.0)) for player in roster)
     return totals

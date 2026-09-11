@@ -4,33 +4,35 @@ ELMS Fantasy Basketball is a fantasy basketball analytics and decision-support e
 
 > What available move gives my team the highest probability of winning the league?
 
-The project is deliberately provider-agnostic. Yahoo Fantasy will be the primary league source once API provisioning is complete, but the decision engine already runs against normalized JSON/CSV inputs so development does not depend on Yahoo authentication.
+The project is provider-agnostic. Yahoo Fantasy is the primary league source, while the decision engine also runs against normalized JSON/CSV inputs so development does not stop on external API provisioning.
 
 ## Current capabilities
 
 - Normalized league/team/player domain model
-- Category-aware player valuation
-- Population z-scores
+- Category-aware player valuation and population z-scores
 - Team-needs/category weighting
 - Lower-is-better turnover handling
+- Attempt-weighted FG% and FT% aggregation when makes/attempts are available
 - Schedule, injury and minutes adjustments
 - Waiver-wire add/drop ranking
 - Matchup-aware streaming recommendations
-- Per-category matchup projections
-- Overall matchup win-probability estimate
+- Per-category and overall matchup projections
 - Trade impact analysis
 - Best-roster / best-single-swap optimization helpers
-- Generic CSV player-stat ingestion
-- JSON league snapshot ingestion
-- SQLite history for league snapshots and recommendations
-- Yahoo provider boundary ready for OAuth/API implementation
+- Generic CSV and JSON ingestion
+- SQLite history for snapshots and recommendations
+- Yahoo OAuth authorization with local token storage
+- Yahoo access-token refresh support
+- Yahoo league discovery and read-only league resource clients
+- Yahoo league export bundle for normalization development
+- Actionable handling of Yahoo Fantasy API provisioning errors
 - Automated pytest coverage and GitHub Actions CI
 
 ## Architecture
 
-The core engine does not know where league data came from. Providers normalize source data into `LeagueSnapshot`; the valuation, matchup and decision layers then operate on that model.
+The core engine does not know where league data came from. Providers normalize source data into `LeagueSnapshot`; valuation, matchup and decision layers then operate on that model.
 
-See `docs/ARCHITECTURE.md` for details.
+See `docs/ARCHITECTURE.md` and `docs/YAHOO_INTEGRATION.md`.
 
 ## Install
 
@@ -47,81 +49,51 @@ pip install -e .[dev]
 pytest -q
 ```
 
-## CLI
-
-Rank waiver moves:
+## Core CLI
 
 ```bash
 elms-fantasy waivers data/example_snapshot.json --limit 10
-```
-
-Rank matchup-aware streamers:
-
-```bash
 elms-fantasy streamers data/example_snapshot.json --limit 10
-```
-
-Project the active matchup:
-
-```bash
 elms-fantasy matchup data/example_snapshot.json
-```
-
-Persist a snapshot and the resulting recommendations to SQLite:
-
-```bash
 elms-fantasy waivers data/example_snapshot.json --save
 ```
 
-The local database is written to `data/elms_fantasy.db` and is ignored by git.
+## Yahoo CLI
 
-## Normalized player fields
+```bash
+elms-fantasy yahoo-status
+elms-fantasy yahoo-auth
+elms-fantasy yahoo-leagues
+elms-fantasy yahoo-league LEAGUE_KEY --section settings
+elms-fantasy yahoo-export LEAGUE_KEY data/yahoo_league_export.json
+```
 
-A player can currently carry:
+The OAuth token file `.yahoo_tokens.json`, `.env`, and SQLite databases are ignored by git.
 
-- player ID / name / NBA team
-- eligible positions
-- games remaining in evaluation window
-- injury status
-- projected category statistics
-- minutes
-- usage rate
-- roster percentage
-- projected game dates
+### Current Yahoo blocker
 
-This lets the engine work with manually supplied data, exported projections, or future live providers without rewriting the decision logic.
+Yahoo OAuth is operational: authorization succeeds and Yahoo issues both access and refresh tokens. The Fantasy Sports endpoint currently returns `401 additional_authorization_required`. This indicates that the developer application still needs its approved Fantasy Sports API permission associated with the Client ID.
 
-## Yahoo Fantasy integration
+The CLI now detects that condition and explains the required provisioning step instead of dumping a traceback. Once Yahoo attaches the permission, re-run `yahoo-auth` and then `yahoo-leagues`.
 
-`src/elms_fantasy/providers/yahoo.py` is intentionally isolated. Yahoo access is approved but the developer application still needs to be correctly provisioned/associated with the Yahoo developer account before live OAuth ingestion can be completed.
+The actual production basketball league does not need to exist yet. When it is created, the same authorized Yahoo account should join it, after which the league key can be discovered and the raw league surfaces exported for normalization.
 
-Once Yahoo provides the Client ID/secret and Fantasy Sports permission, the adapter will populate the same normalized snapshot with:
+## Percentage categories
 
-- league settings and scoring categories
-- teams and rosters
-- standings and current matchup
-- free agents / waivers
-- transactions
-- draft results
-
-No redesign of the decision engine should be necessary.
+Roster FG% and FT% are now aggregated from makes/attempts (`FGM/FGA`, `FTM/FTA`) when those fields are present. This fixes the previous behavior of summing player percentages. If a projection feed supplies only percentage values, the model falls back to an equal-weight mean until attempt data is available.
 
 ## What still depends on live data or league-specific rules
 
-The repository now contains the major Yahoo-independent engine pieces. The remaining high-value work needs real source data or actual league configuration, especially:
-
-- Yahoo OAuth and live league ingestion
+- Yahoo provisioning of Fantasy Sports permission
+- one real Yahoo basketball league payload to validate normalization
 - live NBA statistics/projections feed
 - live injury/news feed
-- NBA schedule and playoff-week schedule optimization
-- exact roster-slot legality and daily lineup optimization
-- transaction/waiver timing rules
-- attempt-weighted FG% and FT% modeling using makes/attempts
-- historical backtesting against real league decisions
-- richer simulations calibrated from historical player variance
+- NBA schedule and playoff-week optimization
+- exact Yahoo roster-slot legality and daily lineup optimization
+- waiver/transaction timing rules from the actual league
+- historical backtesting against real decisions
+- richer probability simulations calibrated from historical player variance
 
 ## Status
 
-**v0.2.0 — standalone decision-engine foundation operational.**
-
-The next integration milestone is live Yahoo league ingestion when provisioning is complete; until then, the engine can be exercised with normalized JSON/CSV data.
+**v0.3 development — OAuth and read-only Yahoo integration layer operational; waiting on Yahoo Fantasy Sports permission and a real league payload for full normalization.**
