@@ -1,0 +1,26 @@
+{
+  "settings": {
+    "league_id": "demo",
+    "name": "ELMS Demo League",
+    "categories": ["PTS", "REB", "AST", "STL", "BLK", "3PM"],
+    "roster_slots": ["PG", "SG", "SF", "PF", "C", "G", "F", "UTIL"],
+    "max_adds_per_week": 4
+  },
+  "my_team": {
+    "team_id": "1",
+    "name": "ELMS",
+    "players": [
+      {"player_id": "101", "name": "Roster Guard", "positions": ["PG"], "team": "NYK", "games_remaining": 3, "stats": {"PTS": 18, "REB": 3, "AST": 6, "STL": 1, "BLK": 0.2, "3PM": 2.1}},
+      {"player_id": "102", "name": "Roster Big", "positions": ["C"], "team": "BOS", "games_remaining": 3, "stats": {"PTS": 12, "REB": 8, "AST": 2, "STL": 0.5, "BLK": 1.1, "3PM": 0.3}}
+    ]
+  },
+  "opponents": [
+    {"team_id": "2", "name": "Opponent", "players": [
+      {"player_id": "201", "name": "Opponent Star", "positions": ["SF"], "team": "DEN", "games_remaining": 4, "stats": {"PTS": 28, "REB": 7, "AST": 7, "STL": 1.4, "BLK": 0.8, "3PM": 3.2}}
+    ]}
+  ],
+  "free_agents": [
+    {"player_id": "301", "name": "Assist Streamer", "positions": ["PG"], "team": "ORL", "games_remaining": 4, "stats": {"PTS": 14, "REB": 3, "AST": 8, "STL": 1.2, "BLK": 0.1, "3PM": 1.5}},
+    {"player_id": "302", "name": "Big Streamer", "positions": ["PF", "C"], "team": "CLE", "games_remaining": 4, "stats": {"PTS": 13, "REB": 10, "AST": 2, "STL": 0.7, "BLK": 1.8, "3PM": 0.5}}
+  ]
+}
