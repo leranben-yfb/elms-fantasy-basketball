@@ -1,0 +1,15 @@
+{
+  "as_of": "2026-09-10",
+  "current_opponent_id": "opp-1",
+  "settings": {
+    "league_id": "demo",
+    "name": "Demo 9-Cat",
+    "categories": ["PTS", "REB", "AST", "3PM", "STL", "BLK", "FG%", "FT%", "TO"],
+    "roster_slots": ["PG", "SG", "G", "SF", "PF", "F", "C", "C", "UTIL", "UTIL", "BN", "BN", "BN"],
+    "max_adds_per_week": 4,
+    "scoring_type": "categories"
+  },
+  "my_team": {"team_id": "me", "name": "My Team", "players": []},
+  "opponents": [{"team_id": "opp-1", "name": "Opponent", "players": []}],
+  "free_agents": []
+}
