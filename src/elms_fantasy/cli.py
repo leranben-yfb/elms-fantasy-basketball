@@ -1,29 +1,51 @@
 from __future__ import annotations
 
 import argparse
+import json
+from dataclasses import asdict
 
-from elms_fantasy.engine import rank_free_agents
+from elms_fantasy.engine import rank_free_agents, rank_streamers
+from elms_fantasy.matchup import project_matchup
 from elms_fantasy.providers.json_file import JsonFileProvider
+from elms_fantasy.storage import HistoryStore
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="ELMS Fantasy Basketball decision engine")
-    parser.add_argument("snapshot", help="Path to a normalized league snapshot JSON file")
-    parser.add_argument("--limit", type=int, default=10)
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    for name in ("waivers", "streamers"):
+        p = sub.add_parser(name)
+        p.add_argument("snapshot")
+        p.add_argument("--limit", type=int, default=10)
+        p.add_argument("--save", action="store_true")
+
+    p = sub.add_parser("matchup")
+    p.add_argument("snapshot")
+    p.add_argument("--opponent-id")
+
     args = parser.parse_args()
-
     snapshot = JsonFileProvider(args.snapshot).get_snapshot()
-    recommendations = rank_free_agents(snapshot, limit=args.limit)
 
-    print(f"League: {snapshot.settings.name}")
-    print(f"Team: {snapshot.my_team.name}\n")
-    for idx, rec in enumerate(recommendations, 1):
-        move = f"ADD {rec.player_in}"
-        if rec.player_out:
-            move += f" / DROP {rec.player_out}"
-        print(f"{idx}. {move}  score={rec.score:.2f}")
-        for reason in rec.reasons:
-            print(f"   - {reason}")
+    if args.command in {"waivers", "streamers"}:
+        recs = rank_free_agents(snapshot, args.limit) if args.command == "waivers" else rank_streamers(snapshot, limit=args.limit)
+        for idx, rec in enumerate(recs, 1):
+            move = f"ADD {rec.player_in}" + (f" / DROP {rec.player_out}" if rec.player_out else "")
+            print(f"{idx}. {move} score={rec.score:.2f}")
+            for reason in rec.reasons:
+                print(f"   - {reason}")
+        if args.save:
+            store = HistoryStore()
+            store.save_snapshot(snapshot)
+            store.save_recommendations(snapshot, recs)
+            store.close()
+    else:
+        opponent_id = args.opponent_id or snapshot.current_opponent_id
+        opponent = next((t for t in snapshot.opponents if t.team_id == opponent_id), None)
+        if opponent is None:
+            raise SystemExit("Opponent not found; provide --opponent-id")
+        projection = project_matchup(snapshot.my_team, opponent, snapshot.settings.categories)
+        print(json.dumps(asdict(projection), indent=2))
 
 
 if __name__ == "__main__":
