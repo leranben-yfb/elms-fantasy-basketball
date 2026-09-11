@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -50,7 +51,6 @@ def refresh_access_token(tokens: dict | None = None) -> dict:
     with urllib.request.urlopen(request, timeout=30) as response:
         refreshed = json.loads(response.read().decode('utf-8'))
 
-    # Yahoo may rotate the refresh token. Preserve the existing one if omitted.
     if not refreshed.get('refresh_token'):
         refreshed['refresh_token'] = refresh_token
     _save_tokens(refreshed)
@@ -90,5 +90,4 @@ def yahoo_get(path: str, retry_refresh: bool = True) -> dict:
 
 
 def get_basketball_leagues() -> dict:
-    # Current Yahoo user -> NBA fantasy games -> leagues.
     return yahoo_get('users;use_login=1/games;game_codes=nba/leagues')
