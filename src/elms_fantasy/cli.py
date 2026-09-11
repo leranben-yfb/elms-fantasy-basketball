@@ -9,6 +9,7 @@ from elms_fantasy.engine import rank_free_agents, rank_streamers
 from elms_fantasy.matchup import project_matchup
 from elms_fantasy.providers.json_file import JsonFileProvider
 from elms_fantasy.storage import HistoryStore
+from elms_fantasy.yahoo_api import get_basketball_leagues
 from elms_fantasy.yahoo_oauth import build_authorization_url, exchange_code, extract_code
 
 
@@ -27,6 +28,7 @@ def main() -> None:
     p.add_argument("--opponent-id")
 
     sub.add_parser("yahoo-auth", help="Authorize Yahoo and save OAuth tokens locally")
+    sub.add_parser("yahoo-leagues", help="Fetch Yahoo Fantasy Basketball leagues for the signed-in user")
 
     args = parser.parse_args()
 
@@ -46,6 +48,11 @@ def main() -> None:
         print("Access token received:", bool(payload.get("access_token")))
         print("Refresh token received:", bool(payload.get("refresh_token")))
         print("Tokens saved locally to .yahoo_tokens.json (gitignored).")
+        return
+
+    if args.command == "yahoo-leagues":
+        payload = get_basketball_leagues()
+        print(json.dumps(payload, indent=2))
         return
 
     snapshot = JsonFileProvider(args.snapshot).get_snapshot()
