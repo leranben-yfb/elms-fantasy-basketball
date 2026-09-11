@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import webbrowser
 from dataclasses import asdict
 
 from elms_fantasy.engine import rank_free_agents, rank_streamers
 from elms_fantasy.matchup import project_matchup
 from elms_fantasy.providers.json_file import JsonFileProvider
 from elms_fantasy.storage import HistoryStore
+from elms_fantasy.yahoo_oauth import build_authorization_url, exchange_code, extract_code
 
 
 def main() -> None:
@@ -24,7 +26,28 @@ def main() -> None:
     p.add_argument("snapshot")
     p.add_argument("--opponent-id")
 
+    sub.add_parser("yahoo-auth", help="Authorize Yahoo and save OAuth tokens locally")
+
     args = parser.parse_args()
+
+    if args.command == "yahoo-auth":
+        url, state = build_authorization_url()
+        print("Opening Yahoo authorization in your browser...")
+        print(url)
+        webbrowser.open(url)
+        print()
+        print("After approving access, Yahoo will redirect to your callback URL.")
+        print("If the browser shows a localhost connection error, that is okay.")
+        print("Copy the FULL URL from the browser address bar and paste it below.")
+        callback = input("Callback URL (or authorization code): ").strip()
+        code = extract_code(callback, expected_state=state if "://" in callback else None)
+        payload = exchange_code(code)
+        print("Yahoo OAuth succeeded.")
+        print("Access token received:", bool(payload.get("access_token")))
+        print("Refresh token received:", bool(payload.get("refresh_token")))
+        print("Tokens saved locally to .yahoo_tokens.json (gitignored).")
+        return
+
     snapshot = JsonFileProvider(args.snapshot).get_snapshot()
 
     if args.command in {"waivers", "streamers"}:
