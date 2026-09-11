@@ -1,68 +1,64 @@
 from __future__ import annotations
 
-from statistics import mean, pstdev
+from dataclasses import replace
 
-from elms_fantasy.models import LeagueSnapshot, Player, Recommendation
-
-
-def _category_weights(snapshot: LeagueSnapshot) -> dict[str, float]:
-    categories = snapshot.settings.categories
-    my_totals = {c: sum(p.stats.get(c, 0.0) for p in snapshot.my_team.players) for c in categories}
-    if not snapshot.opponents:
-        return {c: 1.0 for c in categories}
-
-    opp_totals: dict[str, list[float]] = {c: [] for c in categories}
-    for team in snapshot.opponents:
-        for c in categories:
-            opp_totals[c].append(sum(p.stats.get(c, 0.0) for p in team.players))
-
-    weights: dict[str, float] = {}
-    for c in categories:
-        benchmark = mean(opp_totals[c]) if opp_totals[c] else 0.0
-        gap = benchmark - my_totals[c]
-        scale = abs(benchmark) or 1.0
-        weights[c] = 1.0 + max(-0.5, min(1.5, gap / scale))
-    return weights
+from elms_fantasy.matchup import project_matchup
+from elms_fantasy.models import LeagueSnapshot, Player, Recommendation, TeamRoster
+from elms_fantasy.valuation import category_weights, player_value, population_zscores
 
 
-def _player_score(player: Player, categories: tuple[str, ...], weights: dict[str, float]) -> float:
-    raw = sum(float(player.stats.get(c, 0.0)) * weights[c] for c in categories)
-    schedule_boost = 1.0 + min(max(player.games_remaining, 0), 7) * 0.03
-    injury_penalty = 0.70 if player.injury_status else 1.0
-    return raw * schedule_boost * injury_penalty
+def _candidate_pool(snapshot: LeagueSnapshot) -> tuple[Player, ...]:
+    return tuple(snapshot.my_team.players) + tuple(snapshot.free_agents)
 
 
 def rank_free_agents(snapshot: LeagueSnapshot, limit: int = 10) -> list[Recommendation]:
     categories = snapshot.settings.categories
-    weights = _category_weights(snapshot)
+    weights = category_weights(snapshot)
+    pool = _candidate_pool(snapshot)
+    zscores = population_zscores(pool, categories)
     roster = list(snapshot.my_team.players)
-    if not roster:
-        drop_candidates: list[Player | None] = [None]
-    else:
-        drop_candidates = sorted(roster, key=lambda p: _player_score(p, categories, weights))
+    drop_candidates = sorted(roster, key=lambda p: player_value(p, categories, weights, zscores.get(p.player_id, {})))
+    weakest = drop_candidates[0] if drop_candidates else None
+    weakest_score = player_value(weakest, categories, weights, zscores.get(weakest.player_id, {})) if weakest else 0.0
 
     recommendations: list[Recommendation] = []
-    for free_agent in snapshot.free_agents:
-        incoming = _player_score(free_agent, categories, weights)
-        outgoing_player = drop_candidates[0]
-        outgoing = _player_score(outgoing_player, categories, weights) if outgoing_player else 0.0
-        delta = incoming - outgoing
-        reasons = [f"Projected weighted roster improvement: {delta:.2f}"]
-        if free_agent.games_remaining:
-            reasons.append(f"{free_agent.games_remaining} games remaining in the evaluation window")
-        weak_categories = sorted(categories, key=lambda c: weights[c], reverse=True)[:3]
-        helpful = [c for c in weak_categories if free_agent.stats.get(c, 0.0) > 0]
+    for fa in snapshot.free_agents:
+        incoming = player_value(fa, categories, weights, zscores.get(fa.player_id, {}))
+        delta = incoming - weakest_score
+        reasons = [f"Estimated roster value change: {delta:+.2f}"]
+        priority = sorted(categories, key=lambda c: weights.get(c, 1.0), reverse=True)[:3]
+        helpful = [c for c in priority if zscores.get(fa.player_id, {}).get(c, 0.0) > 0]
         if helpful:
             reasons.append("Helps priority categories: " + ", ".join(helpful))
-        recommendations.append(
-            Recommendation(
-                action="ADD_DROP" if outgoing_player else "ADD",
-                player_in=free_agent.name,
-                player_out=outgoing_player.name if outgoing_player else None,
-                score=delta,
-                reasons=tuple(reasons),
-            )
-        )
-
+        if fa.games_remaining:
+            reasons.append(f"{fa.games_remaining} games remaining in evaluation window")
+        if fa.injury_status:
+            reasons.append(f"Availability flag: {fa.injury_status}")
+        recommendations.append(Recommendation(action="ADD_DROP" if weakest else "ADD", player_in=fa.name, player_out=weakest.name if weakest else None, score=delta, reasons=tuple(reasons), metadata={"incoming_value": incoming, "outgoing_value": weakest_score}))
     recommendations.sort(key=lambda r: r.score, reverse=True)
     return recommendations[:limit]
+
+
+def rank_streamers(snapshot: LeagueSnapshot, opponent: TeamRoster | None = None, limit: int = 10) -> list[Recommendation]:
+    base = rank_free_agents(snapshot, limit=max(limit * 3, 20))
+    if opponent is None and snapshot.current_opponent_id:
+        opponent = next((t for t in snapshot.opponents if t.team_id == snapshot.current_opponent_id), None)
+    if opponent is None:
+        return base[:limit]
+
+    baseline = project_matchup(snapshot.my_team, opponent, snapshot.settings.categories)
+    by_name = {p.name: p for p in snapshot.free_agents}
+    roster_by_name = {p.name: p for p in snapshot.my_team.players}
+    rescored: list[Recommendation] = []
+    for rec in base:
+        incoming = by_name.get(rec.player_in or "")
+        outgoing = roster_by_name.get(rec.player_out or "")
+        if incoming is None:
+            continue
+        players = [p for p in snapshot.my_team.players if outgoing is None or p.player_id != outgoing.player_id] + [incoming]
+        new_team = TeamRoster(snapshot.my_team.team_id, snapshot.my_team.name, tuple(players))
+        after = project_matchup(new_team, opponent, snapshot.settings.categories)
+        swing = after.matchup_win_probability - baseline.matchup_win_probability
+        reasons = rec.reasons + (f"Estimated matchup win-probability swing: {swing:+.1%}",)
+        rescored.append(replace(rec, score=rec.score + swing * 10.0, reasons=reasons, metadata={**rec.metadata, "matchup_swing": swing}))
+    return sorted(rescored, key=lambda r: r.score, reverse=True)[:limit]
