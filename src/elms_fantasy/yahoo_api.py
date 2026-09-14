@@ -40,19 +40,24 @@ def _save_tokens(tokens: dict[str, Any]) -> None:
 
 
 def _extract_problem(body: str) -> str | None:
+    # Yahoo often embeds oauth_problem inside a JSON description string, so the
+    # quotes can arrive escaped. Check known problems first rather than relying
+    # on the exact quoting format.
+    if "additional_authorization_required" in body:
+        return "additional_authorization_required"
+
+    normalized = body.replace('\\"', '"')
     markers = (
         'oauth_problem="',
         '"oauth_problem":"',
         "oauth_problem=",
     )
     for marker in markers:
-        if marker in body:
-            tail = body.split(marker, 1)[1]
+        if marker in normalized:
+            tail = normalized.split(marker, 1)[1]
             if marker.endswith('"'):
                 return tail.split('"', 1)[0]
             return tail.split(",", 1)[0].split(" ", 1)[0].strip('"')
-    if "additional_authorization_required" in body:
-        return "additional_authorization_required"
     return None
 
 
