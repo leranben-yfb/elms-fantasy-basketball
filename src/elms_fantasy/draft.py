@@ -155,6 +155,71 @@ def _replacement_levels(
     return levels
 
 
+def _optimal_roster_value(
+    snapshot: LeagueSnapshot,
+    pool: tuple[Player, ...],
+    values: dict[str, float],
+    forced_players: tuple[Player, ...] = (),
+    excluded_ids: set[str] | None = None,
+    *,
+    league_teams: int = 12,
+) -> tuple[set[str], float]:
+    """Return the maximum-value feasible league roster and its total value."""
+    excluded_ids = excluded_ids or set()
+    base_slots = [
+        s.upper() for s in snapshot.settings.roster_slots
+        if s.upper() not in {"IL", "IR", "IR+"}
+    ]
+    league_slots = tuple(slot for slot in base_slots for _ in range(league_teams))
+    players = {
+        p.player_id: p
+        for p in (*forced_players, *pool)
+        if p.player_id not in excluded_ids
+    }
+    match: dict[int, str] = {}
+
+    def assign(player_id: str, seen: set[int]) -> bool:
+        player = players[player_id]
+        candidates = [
+            i for i, slot in enumerate(league_slots)
+            if i not in seen and _eligible(player, slot)
+        ]
+        candidates.sort(
+            key=lambda i: (
+                1 if league_slots[i] in {"UTIL", "BN", "BE"} else 0,
+                i,
+            )
+        )
+        for slot_idx in candidates:
+            seen.add(slot_idx)
+            previous = match.get(slot_idx)
+            if previous is None or assign(previous, seen):
+                match[slot_idx] = player_id
+                return True
+        return False
+
+    forced = [p for p in forced_players if p.player_id not in excluded_ids]
+    forced.sort(key=lambda p: sum(1 for s in league_slots if _eligible(p, s)))
+    for player in forced:
+        if not assign(player.player_id, set()):
+            return set(), float("-inf")
+
+    forced_ids = {p.player_id for p in forced}
+    ordered = sorted(
+        (p for p in pool if p.player_id not in excluded_ids and p.player_id not in forced_ids),
+        key=lambda p: values.get(p.player_id, float("-inf")),
+        reverse=True,
+    )
+    for player in ordered:
+        if len(match) >= len(league_slots):
+            break
+        assign(player.player_id, set())
+
+    rostered_ids = set(match.values())
+    total = sum(values.get(pid, 0.0) for pid in rostered_ids)
+    return rostered_ids, total
+
+
 def rank_draft_board(
     snapshot: LeagueSnapshot,
     *,
@@ -185,7 +250,7 @@ def rank_draft_board(
     # Build adjusted intrinsic values first so replacement level uses the same
     # category, availability, minutes, and injury assumptions as the live board.
     adjusted_values: dict[str, float] = {}
-    for candidate in pool:
+    for candidate in snapshot.free_agents:
         cpz = zs.get(candidate.player_id, {})
         cneeds = sum(cpz.get(c, 0.0) * need_weights[c] for c in categories)
         cgp = float(candidate.stats.get("_CONSENSUS_GP", 76.0))
@@ -203,17 +268,9 @@ def rank_draft_board(
         adjusted_values[candidate.player_id] = cneeds * cavailability + cminutes - cinjury_penalty
 
     drafted_players = tuple(p for p in snapshot.free_agents if p.player_id in drafted_ids)
-    replacement_levels = _replacement_levels(
+    baseline_rostered, baseline_total = _optimal_roster_value(
         snapshot, pool, adjusted_values, drafted_players
     )
-
-    # Scarcity is measured from remaining players who can fill each open slot.
-    scarcity: dict[str, float] = {}
-    for slot in set(open_slots):
-        if slot.upper() in {"BN", "BE", "UTIL"}:
-            continue
-        count = sum(1 for p in pool if _eligible(p, slot))
-        scarcity[slot] = 1.0 / max(count, 1)
 
     ranked: list[DraftRecommendation] = []
     for player in pool:
@@ -228,9 +285,7 @@ def rank_draft_board(
         availability_adjustment = needs_value * (availability - 1.0)
         weighted = needs_value * availability
 
-        compatible = [s for s in open_slots if _eligible(player, s)]
-        scarce = max((scarcity.get(s, 0.0) for s in compatible), default=0.0)
-        scarcity_bonus = min(0.75, scarce * 8.0)
+        scarcity_bonus = 0.0
 
         injury = (player.injury_status or "").lower()
         injury_penalty = 0.0
@@ -255,28 +310,35 @@ def rank_draft_board(
         if yahoo_adp is not None:
             market_value = 0.0
         adjusted_value = weighted + minutes_bonus - injury_penalty + market_value
-        compatible_replacement_slots = [
-            s.upper() for s in open_slots
-            if s.upper() not in {"BN", "BE"} and _eligible(player, s)
-        ]
-        if not compatible_replacement_slots:
-            compatible_replacement_slots = ["UTIL"] if "UTIL" in replacement_levels else []
-        replacement_level = min(
-            (replacement_levels[s] for s in compatible_replacement_slots if s in replacement_levels),
-            default=replacement_levels.get("UTIL", 0.0),
-        )
-        vorp = adjusted_value - replacement_level
 
-        # Blend absolute category strength with position-aware value over
-        # replacement. This prevents weak specialists from outranking true stars
-        # while still rewarding scarce positions in a 12-team/144-player pool.
-        score = adjusted_value * 0.65 + vorp * 0.35 + scarcity_bonus
+        # Candidate-specific marginal VORP: compare the best feasible 12-team
+        # roster with this player against the best feasible roster without him.
+        # This naturally captures multi-position eligibility and true scarcity,
+        # instead of assigning one static replacement number to every PG/C/etc.
+        if player.player_id in baseline_rostered:
+            _, without_total = _optimal_roster_value(
+                snapshot,
+                pool,
+                adjusted_values,
+                drafted_players,
+                {player.player_id},
+            )
+            vorp = baseline_total - without_total
+        else:
+            _, with_total = _optimal_roster_value(
+                snapshot,
+                pool,
+                adjusted_values,
+                drafted_players + (player,),
+            )
+            vorp = with_total - baseline_total
+        replacement_level = adjusted_value - vorp
+
+        score = adjusted_value * 0.65 + vorp * 0.35
 
         reasons = [f"category value {base:+.2f}", f"VORP {vorp:+.2f} (replacement {replacement_level:+.2f})"]
         if abs(need_bonus) >= 0.05:
             reasons.append(f"team-needs adjustment {need_bonus:+.2f}")
-        if scarcity_bonus >= 0.05:
-            reasons.append(f"position scarcity +{scarcity_bonus:.2f}")
         if abs(availability - 1.0) >= 0.03:
             reasons.append(f"availability {projected_gp:.0f} GP ({availability_adjustment:+.2f})")
         if injury_penalty:
