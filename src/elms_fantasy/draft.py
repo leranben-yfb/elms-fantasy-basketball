@@ -82,21 +82,67 @@ def _replacement_levels(
     snapshot: LeagueSnapshot,
     pool: tuple[Player, ...],
     values: dict[str, float],
-    drafted_count: int,
+    drafted_players: tuple[Player, ...] = (),
     *,
     league_teams: int = 12,
 ) -> dict[str, float]:
-    """Estimate best freely replaceable value after a normal 12-team draft.
+    """Estimate slot-specific replacement from a league-wide feasible roster.
 
-    Players inside the remaining expected drafted pool are treated as rostered.
-    The strongest eligible player outside that pool is the replacement baseline
-    for each slot. This makes replacement level respond to actual positional
-    depth instead of using one global player-144 cutoff.
+    The 12-team player pool is filled with a weighted bipartite matching rather
+    than a global top-144 cutoff. Because player value is independent of which
+    eligible slot he occupies, descending-value augmentation yields the
+    maximum-value feasible set of rostered players while respecting PG/SG/G/
+    SF/PF/F/C/UTIL/bench demand across the league.
     """
-    remaining_draft_slots = max(0, _normal_roster_size(snapshot) * league_teams - drafted_count)
+    base_slots = [
+        s.upper() for s in snapshot.settings.roster_slots
+        if s.upper() not in {"IL", "IR", "IR+"}
+    ]
+    league_slots = tuple(slot for slot in base_slots for _ in range(league_teams))
+    players = {p.player_id: p for p in drafted_players}
+    players.update({p.player_id: p for p in pool})
+    match: dict[int, str] = {}
+
+    def assign(player_id: str, seen: set[int]) -> bool:
+        player = players[player_id]
+        eligible_slots = [
+            i for i, slot in enumerate(league_slots)
+            if i not in seen and _eligible(player, slot)
+        ]
+        eligible_slots.sort(
+            key=lambda i: (
+                1 if league_slots[i] in {"UTIL", "BN", "BE"} else 0,
+                i,
+            )
+        )
+        for slot_idx in eligible_slots:
+            seen.add(slot_idx)
+            previous = match.get(slot_idx)
+            if previous is None or assign(previous, seen):
+                match[slot_idx] = player_id
+                return True
+        return False
+
+    # Already-drafted players are forced into the league roster first.
+    drafted_order = sorted(
+        drafted_players,
+        key=lambda p: sum(1 for s in league_slots if _eligible(p, s)),
+    )
+    for player in drafted_order:
+        assign(player.player_id, set())
+
+    # For remaining spots, greedily augment in descending intrinsic value.
+    # Matchable player sets form a transversal matroid, so this produces the
+    # maximum-value feasible rostered set for the slot constraints.
     ordered = sorted(pool, key=lambda p: values.get(p.player_id, float("-inf")), reverse=True)
-    replacement_pool = ordered[remaining_draft_slots:] if remaining_draft_slots < len(ordered) else ordered[-1:]
-    slots = {s.upper() for s in snapshot.settings.roster_slots if s.upper() not in {"IL", "IR", "IR+"}}
+    for player in ordered:
+        if len(match) >= len(league_slots):
+            break
+        assign(player.player_id, set())
+
+    rostered_ids = set(match.values())
+    replacement_pool = [p for p in ordered if p.player_id not in rostered_ids]
+    slots = set(base_slots)
 
     levels: dict[str, float] = {}
     for slot in slots:
@@ -156,8 +202,9 @@ def rank_draft_board(
         cminutes = 0.0 if candidate.minutes is None else max(-0.25, min(0.25, (candidate.minutes - 30.0) / 24.0))
         adjusted_values[candidate.player_id] = cneeds * cavailability + cminutes - cinjury_penalty
 
+    drafted_players = tuple(p for p in snapshot.free_agents if p.player_id in drafted_ids)
     replacement_levels = _replacement_levels(
-        snapshot, pool, adjusted_values, len(drafted_ids)
+        snapshot, pool, adjusted_values, drafted_players
     )
 
     # Scarcity is measured from remaining players who can fill each open slot.
