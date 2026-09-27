@@ -6,6 +6,7 @@ import webbrowser
 from dataclasses import asdict
 
 from elms_fantasy.draft import load_draft_state, rank_draft_board, record_pick, save_draft_state
+from elms_fantasy.draft_import import build_consensus_snapshot
 from elms_fantasy.engine import rank_free_agents, rank_streamers
 from elms_fantasy.matchup import project_matchup
 from elms_fantasy.providers.json_file import JsonFileProvider
@@ -120,6 +121,25 @@ def main() -> None:
     p.add_argument("snapshot")
     p.add_argument("--opponent-id")
 
+    p = sub.add_parser("draft-import", help="Build a consensus draft snapshot from projection files")
+    p.add_argument("fantasypros")
+    p.add_argument("lineup_experts")
+    p.add_argument("--adp")
+    p.add_argument("--ecr")
+    p.add_argument("--output", default="data/draft_snapshot.json")
+
+    p = sub.add_parser("draft-board", help="Show the live ELMS draft board")
+    p.add_argument("snapshot")
+    p.add_argument("--state", default="data/draft_state.json")
+    p.add_argument("--limit", type=int, default=15)
+
+    p = sub.add_parser("draft-pick", help="Record a draft pick and show the updated board")
+    p.add_argument("snapshot")
+    p.add_argument("player")
+    p.add_argument("--mine", action="store_true")
+    p.add_argument("--state", default="data/draft_state.json")
+    p.add_argument("--limit", type=int, default=10)
+
     _add_yahoo_commands(sub)
     args = parser.parse_args()
 
@@ -129,6 +149,30 @@ def main() -> None:
 
     if args.command == "yahoo-status":
         _run_yahoo_status()
+        return
+
+    if args.command == "draft-import":
+        path = build_consensus_snapshot(args.fantasypros, args.lineup_experts, args.output, adp=args.adp, ecr=args.ecr)
+        print(f"Draft snapshot written to {path}")
+        return
+
+    if args.command in {"draft-board", "draft-pick"}:
+        snapshot = JsonFileProvider(args.snapshot).get_snapshot()
+        state = load_draft_state(args.state)
+        if args.command == "draft-pick":
+            try:
+                player = record_pick(snapshot, state, args.player, mine=args.mine)
+            except ValueError as exc:
+                raise SystemExit(str(exc))
+            save_draft_state(args.state, state)
+            print(f"Recorded: {player.name}" + (" (MY TEAM)" if args.mine else ""))
+        board = rank_draft_board(snapshot, drafted_ids=set(state.get("drafted", [])), my_roster_ids=set(state.get("mine", [])), limit=args.limit)
+        print(f"Drafted: {len(state.get('drafted', []))} | Mine: {len(state.get('mine', []))}")
+        for i, rec in enumerate(board, 1):
+            adp_text = f" YahooADP={rec.yahoo_adp:.1f}" if rec.yahoo_adp is not None else ""
+            conf = f" conf={rec.projection_confidence:.0%}" if rec.projection_confidence is not None else ""
+            print(f"{i:>2}. {rec.name:<28} {'/'.join(rec.positions):<8} score={rec.score:+.2f}{adp_text}{conf}")
+            print("    " + "; ".join(rec.reasons))
         return
 
     try:
