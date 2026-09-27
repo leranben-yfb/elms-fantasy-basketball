@@ -86,6 +86,21 @@ def build_consensus_snapshot(
         stats["FG%"] = _num(r.get("FG%")) or 0.0
         stats["FT%"] = _num(r.get("FT%")) or 0.0
 
+        # LineupExperts exposes made FG/FT per game. Combined with the
+        # FantasyPros percentages, derive shot-attempt volume so percentage
+        # categories can be valued by impact instead of raw percentage alone.
+        if other:
+            fgm = _num(other.get("FG"))
+            ftm = _num(other.get("FT"))
+            fg_pct = stats["FG%"] / 100.0 if stats["FG%"] > 1 else stats["FG%"]
+            ft_pct = stats["FT%"] / 100.0 if stats["FT%"] > 1 else stats["FT%"]
+            if fgm is not None and fg_pct > 0:
+                stats["FGM"] = fgm
+                stats["FGA"] = round(fgm / fg_pct, 3)
+            if ftm is not None and ft_pct > 0:
+                stats["FTM"] = ftm
+                stats["FTA"] = round(ftm / ft_pct, 3)
+
         # FantasyPros sometimes appends availability/status tokens to the
         # positions field (for example "PF/C OUT"). Separate those tokens so
         # they cannot masquerade as positions and the draft risk model sees them.
