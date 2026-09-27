@@ -133,3 +133,21 @@ def test_drafted_players_are_forced_into_replacement_model():
     values = {p.player_id: float(p.stats["PTS"]) for p in pool}
     levels = _replacement_levels(snap, pool, values, (drafted,), league_teams=1)
     assert levels["PG"] == 8.0
+
+
+def test_marginal_vorp_rewards_scarce_position():
+    settings = LeagueSettings("1", "Draft", ("PTS",), ("PG", "C", "UTIL", "BN"))
+    pool = (
+        Player("pg1", "PG Star", ("PG",), "X", stats={"PTS": 30}),
+        Player("pg2", "PG Two", ("PG",), "X", stats={"PTS": 29}),
+        Player("pg3", "PG Three", ("PG",), "X", stats={"PTS": 28}),
+        Player("pg4", "PG Four", ("PG",), "X", stats={"PTS": 27}),
+        Player("c1", "C Star", ("C",), "X", stats={"PTS": 30}),
+        Player("c2", "C Two", ("C",), "X", stats={"PTS": 10}),
+    )
+    snap = LeagueSnapshot(settings, TeamRoster("me", "Mine", ()), free_agents=pool)
+    board = rank_draft_board(snap, limit=len(pool))
+    recs = {rec.player_id: rec for rec in board}
+    assert recs["c1"].vorp is not None and recs["pg1"].vorp is not None
+    assert recs["c1"].replacement_level is not None
+    assert recs["pg1"].replacement_level is not None
