@@ -18,6 +18,11 @@ class DraftRecommendation:
     scarcity_bonus: float
     need_bonus: float
     reasons: tuple[str, ...]
+    yahoo_adp: float | None = None
+    consensus_adp: float | None = None
+    ecr: float | None = None
+    projection_confidence: float | None = None
+    market_value: float = 0.0
 
 
 def _eligible(player: Player, slot: str) -> bool:
@@ -36,6 +41,7 @@ def _open_slots(snapshot: LeagueSnapshot, roster: tuple[Player, ...]) -> tuple[s
     slots = list(snapshot.settings.roster_slots)
     # Bench is intentionally filled last; assign each drafted player to the
     # most restrictive compatible active slot first.
+    slots = [s for s in slots if s.upper() not in {"IL", "IR", "IR+"}]
     active = [s for s in slots if s.upper() not in {"BN", "BE"}]
     bench = [s for s in slots if s.upper() in {"BN", "BE"}]
     for player in roster:
@@ -99,7 +105,15 @@ def rank_draft_board(
             injury_penalty = 1.0 if any(x in injury for x in ("out", "injured", "susp")) else 0.35
 
         minutes_bonus = 0.0 if player.minutes is None else max(-0.25, min(0.25, (player.minutes - 30.0) / 24.0))
-        score = weighted + scarcity_bonus + minutes_bonus - injury_penalty
+        yahoo_adp = player.stats.get("_YAHOO_ADP")
+        consensus_adp = player.stats.get("_CONSENSUS_ADP")
+        ecr = player.stats.get("_ECR")
+        disagreement = float(player.stats.get("_PROJ_DISAGREEMENT", 0.0))
+        projection_confidence = max(0.0, min(1.0, 1.0 - disagreement))
+        market_value = 0.0
+        if yahoo_adp is not None:
+            market_value = max(-0.35, min(0.35, (75.0 - float(yahoo_adp)) / 225.0))
+        score = weighted + scarcity_bonus + minutes_bonus - injury_penalty + market_value
 
         reasons = [f"category value {base:+.2f}"]
         if abs(need_bonus) >= 0.05:
@@ -108,9 +122,17 @@ def rank_draft_board(
             reasons.append(f"position scarcity +{scarcity_bonus:.2f}")
         if injury_penalty:
             reasons.append(f"injury/status penalty -{injury_penalty:.2f}")
+        if yahoo_adp is not None:
+            reasons.append(f"Yahoo ADP {float(yahoo_adp):.1f}")
+        if disagreement >= 0.12:
+            reasons.append(f"projection disagreement {disagreement:.0%}")
         ranked.append(DraftRecommendation(
             player.player_id, player.name, player.positions, score, base,
-            scarcity_bonus, need_bonus, tuple(reasons)
+            scarcity_bonus, need_bonus, tuple(reasons),
+            float(yahoo_adp) if yahoo_adp is not None else None,
+            float(consensus_adp) if consensus_adp is not None else None,
+            float(ecr) if ecr is not None else None,
+            projection_confidence, market_value
         ))
 
     ranked.sort(key=lambda r: (r.score, r.base_value), reverse=True)
