@@ -3,11 +3,13 @@ from __future__ import annotations
 import csv
 import json
 import re
+import unicodedata
 from pathlib import Path
 
 
-def _key(name: str) -> str:
-    return re.sub(r"[^a-z0-9]", "", name.lower())
+def _key(name: str | None) -> str:
+    text = unicodedata.normalize("NFKD", str(name or "")).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]", "", text.lower())
 
 
 def _num(value):
@@ -84,6 +86,19 @@ def build_consensus_snapshot(
         stats["FG%"] = _num(r.get("FG%")) or 0.0
         stats["FT%"] = _num(r.get("FT%")) or 0.0
 
+        # FantasyPros sometimes appends availability/status tokens to the
+        # positions field (for example "PF/C OUT"). Separate those tokens so
+        # they cannot masquerade as positions and the draft risk model sees them.
+        raw_positions = str(r.get("Positions", "") or "")
+        status_tokens = []
+        for token in ("OUT", "O", "INJ", "IR", "SUSP", "DTD", "GTD", "Q"):
+            if re.search(rf"(?:^|[ /,]){re.escape(token)}(?:$|[ /,])", raw_positions, re.I):
+                status_tokens.append(token)
+        clean_positions = re.sub(r"\b(?:OUT|INJ|IR|SUSP|DTD|GTD)\b", "", raw_positions, flags=re.I)
+        clean_positions = re.sub(r"\s+", "", clean_positions)
+        positions = [p for p in re.split(r"[/,]", clean_positions) if p and p.upper() not in {"O", "Q"}]
+        injury_status = "/".join(status_tokens) if status_tokens else None
+
         market = adp_by.get(k, {})
         expert = ecr_by.get(k, {})
         metadata = {
@@ -104,8 +119,9 @@ def build_consensus_snapshot(
         players.append({
             "player_id": k,
             "name": r["Player"],
-            "positions": [p.strip() for p in str(r.get("Positions", "")).split(",") if p.strip()],
+            "positions": positions,
             "team": r.get("Team", ""),
+            "injury_status": injury_status,
             "games_remaining": 0,
             "stats": stats,
             "minutes": _num(r.get("MIN")),
