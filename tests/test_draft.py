@@ -33,3 +33,36 @@ def test_record_pick_tracks_my_roster():
     picked = record_pick(snapshot(), state, "Alpha Guard", mine=True)
     assert picked.player_id in state["drafted"]
     assert picked.player_id in state["mine"]
+
+
+def test_il_slots_do_not_create_draft_demand():
+    settings = LeagueSettings("1", "Draft", ("PTS",), ("PG", "UTIL", "BN", "IL", "IL"))
+    pool = (
+        Player("1", "Guard", ("PG",), "X", stats={"PTS": 20}),
+        Player("2", "Center", ("C",), "X", stats={"PTS": 19}),
+    )
+    snap = LeagueSnapshot(settings, TeamRoster("me", "Mine", ()), free_agents=pool)
+    board = rank_draft_board(snap)
+    assert all("IL" not in reason for rec in board for reason in rec.reasons)
+
+
+def test_adp_does_not_change_intrinsic_score():
+    settings = LeagueSettings("1", "Draft", ("PTS",), ("UTIL", "BN"))
+    pool = (
+        Player("1", "Early ADP", ("PG",), "X", stats={"PTS": 20, "_YAHOO_ADP": 1}),
+        Player("2", "Late ADP", ("PG",), "X", stats={"PTS": 20, "_YAHOO_ADP": 100}),
+    )
+    snap = LeagueSnapshot(settings, TeamRoster("me", "Mine", ()), free_agents=pool)
+    board = rank_draft_board(snap)
+    assert board[0].score == board[1].score
+    assert board[0].market_value == board[1].market_value == 0.0
+
+
+def test_out_status_gets_stronger_penalty():
+    settings = LeagueSettings("1", "Draft", ("PTS",), ("UTIL", "BN"))
+    healthy = Player("1", "Healthy", ("PG",), "X", stats={"PTS": 20})
+    injured = Player("2", "Injured", ("PG",), "X", injury_status="OUT", stats={"PTS": 20})
+    snap = LeagueSnapshot(settings, TeamRoster("me", "Mine", ()), free_agents=(healthy, injured))
+    board = rank_draft_board(snap)
+    scores = {rec.player_id: rec.score for rec in board}
+    assert scores["1"] > scores["2"]
