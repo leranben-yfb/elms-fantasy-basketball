@@ -4,7 +4,7 @@
     "league_id": "draft",
     "name": "Draft Day",
     "categories": ["PTS", "REB", "AST", "3PM", "STL", "BLK", "FG%", "FT%", "TO"],
-    "roster_slots": ["PG", "SG", "G", "SF", "PF", "F", "C", "C", "UTIL", "UTIL", "BN", "BN", "BN"],
+    "roster_slots": ["PG", "SG", "G", "SF", "PF", "F", "C", "UTIL", "UTIL", "BN", "BN", "BN", "IL", "IL"],
     "scoring_type": "categories"
   },
   "my_team": {"team_id": "me", "name": "My Team", "players": []},
