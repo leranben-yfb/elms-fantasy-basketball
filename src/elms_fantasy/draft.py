@@ -96,8 +96,10 @@ def rank_draft_board(
         projected_gp = float(player.stats.get("_CONSENSUS_GP", 76.0))
         availability = max(0.72, min(1.03, projected_gp / 76.0))
         base = sum(pz.get(c, 0.0) for c in categories)
-        weighted = sum(pz.get(c, 0.0) * need_weights[c] for c in categories) * availability
-        need_bonus = weighted - base
+        needs_value = sum(pz.get(c, 0.0) * need_weights[c] for c in categories)
+        need_bonus = needs_value - base
+        availability_adjustment = needs_value * (availability - 1.0)
+        weighted = needs_value * availability
 
         compatible = [s for s in open_slots if _eligible(player, s)]
         scarce = max((scarcity.get(s, 0.0) for s in compatible), default=0.0)
@@ -133,7 +135,7 @@ def rank_draft_board(
         if scarcity_bonus >= 0.05:
             reasons.append(f"position scarcity +{scarcity_bonus:.2f}")
         if abs(availability - 1.0) >= 0.03:
-            reasons.append(f"availability {projected_gp:.0f} GP")
+            reasons.append(f"availability {projected_gp:.0f} GP ({availability_adjustment:+.2f})")
         if injury_penalty:
             reasons.append(f"injury/status penalty -{injury_penalty:.2f}")
         if yahoo_adp is not None:
