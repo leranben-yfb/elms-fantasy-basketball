@@ -21,7 +21,7 @@ The project is provider-agnostic. Yahoo Fantasy is the primary league source, wh
 - Best-roster / best-single-swap optimization helpers
 - Generic CSV and JSON ingestion
 - Yahoo-independent live draft board with manual pick tracking
-- Draft recommendations that adapt to category needs, position scarcity, injuries, and roster construction
+- Draft recommendations that adapt to category needs, position-aware value over replacement, injuries, and roster construction
 - SQLite history for snapshots and recommendations
 - Yahoo OAuth authorization with local token storage
 - Yahoo access-token refresh support
@@ -131,4 +131,4 @@ elms-fantasy draft-pick data/draft_snapshot.json "Nikola Jokic"
 elms-fantasy draft-pick data/draft_snapshot.json "Your Player" --mine
 ```
 
-The consensus layer averages FantasyPros and LineupExperts counting-stat projections when both are available, keeps FantasyPros FG%/FT% where attempt data is unavailable, tracks projection disagreement as a confidence signal, and preserves Yahoo ADP/ECR as secondary draft-timing signals rather than substitutes for 9-cat value.
+The consensus layer averages FantasyPros and LineupExperts counting-stat projections when both are available, derives shooting-attempt volume for attempt-weighted FG%/FT% impact, tracks projection disagreement as a confidence signal, and preserves Yahoo ADP/ECR as secondary draft-timing signals rather than substitutes for 9-cat value. The draft board also estimates position-aware replacement level from the 12-team, 12-normal-roster-slot player pool and blends absolute category strength with VORP.
