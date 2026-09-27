@@ -111,3 +111,24 @@ Roster FG% and FT% are now aggregated from makes/attempts (`FGM/FGA`, `FTM/FTA`)
 ## Status
 
 **v0.3 development — draft-day operation no longer depends on Yahoo. OAuth/read-only Yahoo integration remains ready for automatic sync once Yahoo provisions Fantasy Sports permission.**
+
+
+## 2026-27 ELMS draft build
+
+League model: 12 teams, snake draft, 9-category scoring, PG/SG/G/SF/PF/F/C/UTIL/UTIL plus 3 bench. The two IL slots are excluded from normal draft roster demand.
+
+Build the consensus snapshot from the supplied FantasyPros average projections, LineupExperts workbook, FantasyPros Yahoo/ESPN ADP, and FantasyPros ECR:
+
+```powershell
+elms-fantasy draft-import "FantasyPros_NBA_Fantasy_Basketball_Overall_2026-27_Average_Projections.csv" "lineupexperts.com projections 26-27.xlsx" --adp "FantasyPros_2026_Overall_NBA_ADP_Rankings.csv" --ecr "FantasyPros_2026_Draft_ALL_Rankings.csv" --output data/draft_snapshot.json
+```
+
+Then run the board and record picks:
+
+```powershell
+elms-fantasy draft-board data/draft_snapshot.json --limit 20
+elms-fantasy draft-pick data/draft_snapshot.json "Nikola Jokic"
+elms-fantasy draft-pick data/draft_snapshot.json "Your Player" --mine
+```
+
+The consensus layer averages FantasyPros and LineupExperts counting-stat projections when both are available, keeps FantasyPros FG%/FT% where attempt data is unavailable, tracks projection disagreement as a confidence signal, and preserves Yahoo ADP/ECR as secondary draft-timing signals rather than substitutes for 9-cat value.
