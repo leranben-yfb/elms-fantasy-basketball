@@ -56,7 +56,7 @@ def build_consensus_snapshot(
     fp = [r for r in _read_csv(fantasypros) if r.get("Player")]
     le = _read_lineup_xlsx(lineup_experts)
     le_by = {_key(r["Player"]): r for r in le}
-    adp_by = {_key(r["Player"]): r for r in _read_csv(adp)} if adp else {}
+    adp_by = {_key(r["Player"]): r for r in _read_csv(adp) if r.get("Player")} if adp else {}
     ecr_rows = _read_csv(ecr) if ecr else []
     ecr_by = {}
     for r in ecr_rows:
