@@ -7,3 +7,4 @@ __pycache__/
 *.db
 data/yahoo_*.json
 .DS_Store
+data/draft_state.json
