@@ -1,0 +1,21 @@
+{
+  "as_of": "2026-10-01",
+  "settings": {
+    "league_id": "draft",
+    "name": "Draft Day",
+    "categories": ["PTS", "REB", "AST", "3PM", "STL", "BLK", "FG%", "FT%", "TO"],
+    "roster_slots": ["PG", "SG", "G", "SF", "PF", "F", "C", "C", "UTIL", "UTIL", "BN", "BN", "BN"],
+    "scoring_type": "categories"
+  },
+  "my_team": {"team_id": "me", "name": "My Team", "players": []},
+  "opponents": [],
+  "free_agents": [
+    {
+      "player_id": "replace-me",
+      "name": "Replace with projection pool",
+      "positions": ["PG"],
+      "team": "NBA",
+      "stats": {"PTS": 0, "REB": 0, "AST": 0, "3PM": 0, "STL": 0, "BLK": 0, "FG%": 0, "FT%": 0, "TO": 0}
+    }
+  ]
+}
