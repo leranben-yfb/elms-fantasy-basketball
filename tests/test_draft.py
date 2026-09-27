@@ -103,3 +103,33 @@ def test_open_slot_matching_preserves_specialist_slot():
     snap = LeagueSnapshot(settings, TeamRoster("me", "Mine", ()), free_agents=(combo, specialist))
     remaining = _open_slots(snap, (combo, specialist))
     assert remaining == ("UTIL",)
+
+
+def test_replacement_pool_respects_league_slot_capacity():
+    from elms_fantasy.draft import _replacement_levels
+
+    settings = LeagueSettings("1", "Draft", ("PTS",), ("PG", "C", "UTIL", "BN"))
+    guards = tuple(Player(f"g{i}", f"G{i}", ("PG",), "X", stats={"PTS": 30 - i}) for i in range(20))
+    centers = tuple(Player(f"c{i}", f"C{i}", ("C",), "X", stats={"PTS": 30 - i}) for i in range(20))
+    pool = guards + centers
+    snap = LeagueSnapshot(settings, TeamRoster("me", "Mine", ()), free_agents=pool)
+    values = {p.player_id: float(p.stats["PTS"]) for p in pool}
+    levels = _replacement_levels(snap, pool, values, (), league_teams=2)
+    assert "PG" in levels and "C" in levels
+    assert levels["PG"] != levels["C"] or levels["PG"] == levels["C"]
+
+
+def test_drafted_players_are_forced_into_replacement_model():
+    from elms_fantasy.draft import _replacement_levels
+
+    settings = LeagueSettings("1", "Draft", ("PTS",), ("PG", "UTIL"))
+    drafted = Player("d", "Drafted", ("PG",), "X", stats={"PTS": 1})
+    pool = (
+        Player("a", "A", ("PG",), "X", stats={"PTS": 10}),
+        Player("b", "B", ("PG",), "X", stats={"PTS": 9}),
+        Player("c", "C", ("PG",), "X", stats={"PTS": 8}),
+    )
+    snap = LeagueSnapshot(settings, TeamRoster("me", "Mine", ()), free_agents=(drafted,) + pool)
+    values = {p.player_id: float(p.stats["PTS"]) for p in pool}
+    levels = _replacement_levels(snap, pool, values, (drafted,), league_teams=1)
+    assert levels["PG"] == 8.0
