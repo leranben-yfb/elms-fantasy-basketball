@@ -20,6 +20,8 @@ The project is provider-agnostic. Yahoo Fantasy is the primary league source, wh
 - Trade impact analysis
 - Best-roster / best-single-swap optimization helpers
 - Generic CSV and JSON ingestion
+- Yahoo-independent live draft board with manual pick tracking
+- Draft recommendations that adapt to category needs, position scarcity, injuries, and roster construction
 - SQLite history for snapshots and recommendations
 - Yahoo OAuth authorization with local token storage
 - Yahoo access-token refresh support
@@ -57,6 +59,18 @@ elms-fantasy streamers data/example_snapshot.json --limit 10
 elms-fantasy matchup data/example_snapshot.json
 elms-fantasy waivers data/example_snapshot.json --save
 ```
+
+## Draft-day fallback (no Yahoo API required)
+
+Yahoo is not on the critical path for draft day. Put the complete projected player pool in the snapshot's `free_agents` array, then use a local state file to track picks:
+
+```bash
+elms-fantasy draft-board data/draft_snapshot.json --limit 15
+elms-fantasy draft-pick data/draft_snapshot.json "Nikola Jokic"
+elms-fantasy draft-pick data/draft_snapshot.json "YOUR PLAYER" --mine
+```
+
+Every `draft-pick` immediately removes that player from the board. Picks marked `--mine` also change subsequent recommendations based on category needs and remaining roster-slot scarcity. State defaults to `data/draft_state.json`; use `--state` to keep separate mock drafts.
 
 ## Yahoo CLI
 
@@ -96,4 +110,4 @@ Roster FG% and FT% are now aggregated from makes/attempts (`FGM/FGA`, `FTM/FTA`)
 
 ## Status
 
-**v0.3 development — OAuth and read-only Yahoo integration layer operational; waiting on Yahoo Fantasy Sports permission and a real league payload for full normalization.**
+**v0.3 development — draft-day operation no longer depends on Yahoo. OAuth/read-only Yahoo integration remains ready for automatic sync once Yahoo provisions Fantasy Sports permission.**
