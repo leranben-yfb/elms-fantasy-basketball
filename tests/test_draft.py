@@ -77,3 +77,29 @@ def test_percentage_categories_use_attempt_volume():
     board = rank_draft_board(snap, limit=3)
     scores = {rec.player_id: rec.score for rec in board}
     assert scores["2"] > scores["1"]
+
+
+def test_position_aware_vorp_is_exposed():
+    settings = LeagueSettings("1", "Draft", ("PTS",), ("PG", "C", "UTIL", "BN"))
+    pool = tuple(
+        [Player(str(i), f"Guard {i}", ("PG",), "X", stats={"PTS": 30 - i}) for i in range(1, 9)]
+        + [Player("20", "Rare Center", ("C",), "X", stats={"PTS": 25})]
+        + [Player(str(i), f"Center {i}", ("C",), "X", stats={"PTS": 12 - (i - 21)}) for i in range(21, 25)]
+    )
+    snap = LeagueSnapshot(settings, TeamRoster("me", "Mine", ()), free_agents=pool)
+    board = rank_draft_board(snap, limit=len(pool))
+    center = next(rec for rec in board if rec.player_id == "20")
+    assert center.vorp is not None
+    assert center.replacement_level is not None
+    assert any("VORP" in reason for reason in center.reasons)
+
+
+def test_open_slot_matching_preserves_specialist_slot():
+    from elms_fantasy.draft import _open_slots
+
+    settings = LeagueSettings("1", "Draft", ("PTS",), ("PG", "G", "UTIL"))
+    combo = Player("1", "Combo", ("PG", "SG"), "X", stats={"PTS": 20})
+    specialist = Player("2", "Point Only", ("PG",), "X", stats={"PTS": 19})
+    snap = LeagueSnapshot(settings, TeamRoster("me", "Mine", ()), free_agents=(combo, specialist))
+    remaining = _open_slots(snap, (combo, specialist))
+    assert remaining == ("UTIL",)
