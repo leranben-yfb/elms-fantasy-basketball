@@ -109,14 +109,14 @@ def test_replacement_pool_respects_league_slot_capacity():
     from elms_fantasy.draft import _replacement_levels
 
     settings = LeagueSettings("1", "Draft", ("PTS",), ("PG", "C", "UTIL", "BN"))
-    guards = tuple(Player(f"g{i}", f"G{i}", ("PG",), "X", stats={"PTS": 30 - i}) for i in range(20))
+    guards = tuple(Player(f"g{i}", f"G{i}", ("PG",), "X", stats={"PTS": 50 - i}) for i in range(20))
     centers = tuple(Player(f"c{i}", f"C{i}", ("C",), "X", stats={"PTS": 30 - i}) for i in range(20))
     pool = guards + centers
     snap = LeagueSnapshot(settings, TeamRoster("me", "Mine", ()), free_agents=pool)
     values = {p.player_id: float(p.stats["PTS"]) for p in pool}
     levels = _replacement_levels(snap, pool, values, (), league_teams=2)
     assert "PG" in levels and "C" in levels
-    assert levels["PG"] != levels["C"] or levels["PG"] == levels["C"]
+    assert levels["PG"] > levels["C"]
 
 
 def test_drafted_players_are_forced_into_replacement_model():
