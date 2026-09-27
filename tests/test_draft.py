@@ -66,3 +66,14 @@ def test_out_status_gets_stronger_penalty():
     board = rank_draft_board(snap)
     scores = {rec.player_id: rec.score for rec in board}
     assert scores["1"] > scores["2"]
+
+
+def test_percentage_categories_use_attempt_volume():
+    settings = LeagueSettings("1", "Draft", ("FG%",), ("UTIL",))
+    low_volume = Player("1", "Low Volume", ("SG",), "X", stats={"FG%": 55.0, "FGA": 4.0})
+    high_volume = Player("2", "High Volume", ("SG",), "X", stats={"FG%": 55.0, "FGA": 20.0})
+    neutral = Player("3", "Neutral", ("SG",), "X", stats={"FG%": 45.0, "FGA": 12.0})
+    snap = LeagueSnapshot(settings, TeamRoster("me", "Mine", ()), free_agents=(low_volume, high_volume, neutral))
+    board = rank_draft_board(snap, limit=3)
+    scores = {rec.player_id: rec.score for rec in board}
+    assert scores["2"] > scores["1"]
