@@ -28,12 +28,37 @@ def category_weights(snapshot: LeagueSnapshot) -> dict[str, float]:
 def population_zscores(players: tuple[Player, ...], categories: tuple[str, ...]) -> dict[str, dict[str, float]]:
     out = {p.player_id: {} for p in players}
     for category in categories:
-        vals = [float(p.stats.get(category, 0.0)) for p in players]
+        upper = category.upper()
+        # Percentage categories should reflect volume. A 55% shooter on four
+        # attempts does not move a fantasy roster like a 55% shooter on 20.
+        attempt_key = "FGA" if upper == "FG%" else "FTA" if upper == "FT%" else None
+        if attempt_key and any(float(p.stats.get(attempt_key, 0.0) or 0.0) > 0 for p in players):
+            weighted_num = 0.0
+            weighted_den = 0.0
+            for p in players:
+                attempts = float(p.stats.get(attempt_key, 0.0) or 0.0)
+                pct = float(p.stats.get(category, 0.0) or 0.0)
+                if pct > 1.0:
+                    pct /= 100.0
+                if attempts > 0:
+                    weighted_num += pct * attempts
+                    weighted_den += attempts
+            baseline = weighted_num / weighted_den if weighted_den else 0.0
+            vals = []
+            for p in players:
+                attempts = float(p.stats.get(attempt_key, 0.0) or 0.0)
+                pct = float(p.stats.get(category, 0.0) or 0.0)
+                if pct > 1.0:
+                    pct /= 100.0
+                vals.append((pct - baseline) * attempts if attempts > 0 else 0.0)
+        else:
+            vals = [float(p.stats.get(category, 0.0)) for p in players]
+
         mu = mean(vals) if vals else 0.0
         sigma = pstdev(vals) if len(vals) > 1 else 0.0
         for p, value in zip(players, vals):
             z = 0.0 if sigma == 0 else (value - mu) / sigma
-            if category.upper() in LOWER_IS_BETTER:
+            if upper in LOWER_IS_BETTER:
                 z *= -1
             out[p.player_id][category] = z
     return out
