@@ -91,8 +91,12 @@ def rank_draft_board(
     ranked: list[DraftRecommendation] = []
     for player in pool:
         pz = zs.get(player.player_id, {})
+        # Availability matters in season-long roto/H2H value. Use projected
+        # games as a modest reliability adjustment, not a linear totals boost.
+        projected_gp = float(player.stats.get("_CONSENSUS_GP", 76.0))
+        availability = max(0.72, min(1.03, projected_gp / 76.0))
         base = sum(pz.get(c, 0.0) for c in categories)
-        weighted = sum(pz.get(c, 0.0) * need_weights[c] for c in categories)
+        weighted = sum(pz.get(c, 0.0) * need_weights[c] for c in categories) * availability
         need_bonus = weighted - base
 
         compatible = [s for s in open_slots if _eligible(player, s)]
@@ -102,7 +106,12 @@ def rank_draft_board(
         injury = (player.injury_status or "").lower()
         injury_penalty = 0.0
         if injury:
-            injury_penalty = 1.0 if any(x in injury for x in ("out", "injured", "susp")) else 0.35
+            if any(x in injury for x in ("out", "injured", "susp", "ir")):
+                injury_penalty = 2.25
+            elif any(x in injury for x in ("dtd", "gtd", "question", " q")):
+                injury_penalty = 0.55
+            else:
+                injury_penalty = 0.35
 
         minutes_bonus = 0.0 if player.minutes is None else max(-0.25, min(0.25, (player.minutes - 30.0) / 24.0))
         yahoo_adp = player.stats.get("_YAHOO_ADP")
@@ -111,8 +120,11 @@ def rank_draft_board(
         disagreement = float(player.stats.get("_PROJ_DISAGREEMENT", 0.0))
         projection_confidence = max(0.0, min(1.0, 1.0 - disagreement))
         market_value = 0.0
+        # ADP is market timing information, not player quality. Until the
+        # exact snake slot is known it should not move the intrinsic board.
+        # It remains exposed on each recommendation for later turn-survival logic.
         if yahoo_adp is not None:
-            market_value = max(-0.35, min(0.35, (75.0 - float(yahoo_adp)) / 225.0))
+            market_value = 0.0
         score = weighted + scarcity_bonus + minutes_bonus - injury_penalty + market_value
 
         reasons = [f"category value {base:+.2f}"]
@@ -120,6 +132,8 @@ def rank_draft_board(
             reasons.append(f"team-needs adjustment {need_bonus:+.2f}")
         if scarcity_bonus >= 0.05:
             reasons.append(f"position scarcity +{scarcity_bonus:.2f}")
+        if abs(availability - 1.0) >= 0.03:
+            reasons.append(f"availability {projected_gp:.0f} GP")
         if injury_penalty:
             reasons.append(f"injury/status penalty -{injury_penalty:.2f}")
         if yahoo_adp is not None:
